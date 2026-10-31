@@ -1,31 +1,32 @@
 :root {
   color-scheme: light;
-  --paper: #f7f8fc;
-  --ink: #20206e;
-  --muted: #565a86;
-  --rule: #d9dbee;
-  --spent: #20206e;
-  --hatch: #9aa3ec;
+  /* Neutral base with one blue accent. Corners are 4px; only legend swatches, too small for that, are 2px. */
+  --paper: #f8f9fa;
+  --ink: #16191d;
+  --muted: #59616c;
+  --rule: #dde1e6;
+  --spent: #16191d;
+  --hatch: #5598e7;
   /* Ordinal ramp, checked with the dataviz validator against --paper. */
-  --tier-haiku: #9aa3ec;
-  --tier-haiku-high: #6a76de;
-  --tier-sonnet: #4046bd;
-  --tier-opus: #20206e;
+  --tier-haiku: #86b6ef;
+  --tier-haiku-high: #5598e7;
+  --tier-sonnet: #256abf;
+  --tier-opus: #104281;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --paper: #15163a;
-    --ink: #eceefd;
-    --muted: #aeb2dc;
-    --rule: #33356a;
-    --spent: #d4d7fa;
-    --hatch: #6f79e2;
-    --tier-haiku: #4a50b8;
-    --tier-haiku-high: #6f79e2;
-    --tier-sonnet: #9fa7f0;
-    --tier-opus: #d4d7fa;
+    --paper: #15171b;
+    --ink: #eceef1;
+    --muted: #a6aeb9;
+    --rule: #2d3239;
+    --spent: #eceef1;
+    --hatch: #3987e5;
+    --tier-haiku: #1c5cab;
+    --tier-haiku-high: #3987e5;
+    --tier-sonnet: #86b6ef;
+    --tier-opus: #cde2fb;
   }
 }
 
@@ -77,7 +78,7 @@ h1 {
 }
 
 h2 {
-  margin: 0;
+  margin: 2rem 0 0.5rem;
   font-size: 1.125rem;
   font-weight: 600;
   font-stretch: 112%;
@@ -87,19 +88,6 @@ h3 {
   margin: 1.25rem 0 0.25rem;
   font-size: 0.9375rem;
   font-weight: 600;
-}
-
-.heading {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.1rem 1.5rem;
-  margin: 2rem 0 0.5rem;
-}
-
-.heading p {
-  margin: 0;
 }
 
 /* The one loud element: spend snaps back from the baseline to what was actually paid. */
@@ -118,13 +106,14 @@ h3 {
 .spend-fill {
   height: 100%;
   background: var(--spent);
+  transform-origin: left;
   animation: snap 1100ms cubic-bezier(0.22, 1.6, 0.42, 1);
-  transition: width 600ms ease-out;
+  transition: transform 600ms ease-out;
 }
 
 @keyframes snap {
   from {
-    width: 100%;
+    transform: none;
   }
 }
 
@@ -292,7 +281,7 @@ tbody th {
   display: flex;
   flex-wrap: wrap;
   gap: 0.1rem 1rem;
-  margin: 0;
+  margin: 0 0 0.5rem;
   padding: 0;
   list-style: none;
   color: var(--muted);
@@ -348,11 +337,11 @@ tbody th {
 }
 
 .mix-bar span:first-child {
-  border-radius: 3px 0 0 3px;
+  border-radius: 4px 0 0 4px;
 }
 
 .mix-bar span:last-child {
-  border-radius: 0 3px 3px 0;
+  border-radius: 0 4px 4px 0;
 }
 
 .mix-values {
@@ -437,6 +426,10 @@ button {
   background: var(--ink);
   color: var(--paper);
   font-weight: 600;
+}
+
+.signin button:active {
+  transform: translateY(1px);
 }
 
 .signin p {

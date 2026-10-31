@@ -161,7 +161,7 @@ function SpendBar({ spent, baseline, net }: { spent: number; baseline: number; n
         role="img"
         aria-label={`${usd(spent)} spent out of ${usd(baseline)}, ${percent(net, baseline)} saved`}
       >
-        <div className="spend-fill" style={{ width: `${filled}%` }} />
+        <div className="spend-fill" style={{ transform: `scaleX(${filled / 100})` }} />
       </div>
       <figcaption>
         Saved {usd(net)}, {percent(net, baseline)}
@@ -307,12 +307,7 @@ function QualityChart({ report }: { report: Quality }) {
 function QualitySection({ report }: { report: Quality }) {
   return (
     <section aria-labelledby="quality">
-      <div className="heading">
-        <h2 id="quality">Quality</h2>
-        {report.trend.length > 0 && (
-          <p className="quiet">Last {report.rolling} checks rated as good as the requested model</p>
-        )}
-      </div>
+      <h2 id="quality">Quality over the last {report.rolling} checks</h2>
       {report.trend.length === 0 ? (
         <p className="quiet">
           No quality checks yet. About {share(report.sample_rate)} of cheaper answers get compared with the requested model.
@@ -405,17 +400,15 @@ function TierMix({ tiers }: { tiers: Record<string, number> }) {
 function Teams({ teams }: { teams: Team[] }) {
   return (
     <section aria-labelledby="teams">
-      <div className="heading">
-        <h2 id="teams">Teams</h2>
-        <ul className="legend" aria-label="Tier mix, percent of requests from cheapest to most expensive">
-          {TIERS.map((tier) => (
-            <li key={tier.id}>
-              <span className={`swatch tier-${tier.id}`} />
-              {tier.label}
-            </li>
-          ))}
-        </ul>
-      </div>
+      <h2 id="teams">Teams</h2>
+      <ul className="legend" aria-label="Tier mix, percent of requests from cheapest to most expensive">
+        {TIERS.map((tier) => (
+          <li key={tier.id}>
+            <span className={`swatch tier-${tier.id}`} />
+            {tier.label}
+          </li>
+        ))}
+      </ul>
       <div className="scroll" tabIndex={0} role="region" aria-labelledby="teams">
         <table>
           <thead>
@@ -447,9 +440,7 @@ function Teams({ teams }: { teams: Team[] }) {
 function Requests({ rows }: { rows: RequestRow[] }) {
   return (
     <section aria-labelledby="requests">
-      <div className="heading">
-        <h2 id="requests">Latest requests</h2>
-      </div>
+      <h2 id="requests">Latest requests</h2>
       <div className="scroll" tabIndex={0} role="region" aria-labelledby="requests">
         <table className="live">
           <thead>
@@ -581,7 +572,7 @@ export default function App() {
             {overall && overall.quality !== null ? (
               <p className="verdict">
                 Quality matched the requested model on {share(overall.quality)} of {count(overall.checks)} checks (95% range{" "}
-                {(overall.low * 100).toFixed(1)}–{share(overall.high)}).
+                {(overall.low * 100).toFixed(1)}-{share(overall.high)}).
               </p>
             ) : (
               <p className="verdict">No quality checks yet, so this saving has no quality estimate.</p>
