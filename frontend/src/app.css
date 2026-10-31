@@ -48,16 +48,16 @@ body {
 }
 
 .page {
-  max-width: 72rem;
+  max-width: 60rem;
   margin: 0 auto;
-  padding: 1.25rem 1rem 4rem;
+  padding: 1.25rem 1rem 3rem;
 }
 
 .top {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: clamp(2rem, 6vw, 4rem);
+  margin-bottom: 1.75rem;
 }
 
 .brand {
@@ -67,8 +67,8 @@ body {
 
 h1 {
   max-width: 24em;
-  margin: 0 0 1.75rem;
-  font-size: clamp(1.9rem, 4.6vw, 3.25rem);
+  margin: 0 0 1rem;
+  font-size: clamp(1.625rem, 4vw, 2.5rem);
   font-weight: 600;
   font-stretch: 118%;
   line-height: 1.08;
@@ -77,10 +77,29 @@ h1 {
 }
 
 h2 {
-  margin: 3.5rem 0 0.75rem;
-  font-size: 1.375rem;
+  margin: 0;
+  font-size: 1.125rem;
   font-weight: 600;
   font-stretch: 112%;
+}
+
+h3 {
+  margin: 1.25rem 0 0.25rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.1rem 1.5rem;
+  margin: 2rem 0 0.5rem;
+}
+
+.heading p {
+  margin: 0;
 }
 
 /* The one loud element: spend snaps back from the baseline to what was actually paid. */
@@ -89,8 +108,8 @@ h2 {
 }
 
 .spend-track {
-  height: clamp(3.5rem, 9vw, 5.5rem);
-  border-radius: 6px;
+  height: clamp(2.5rem, 7vw, 3.5rem);
+  border-radius: 4px;
   overflow: hidden;
   background: repeating-linear-gradient(-45deg, var(--hatch) 0 2px, transparent 2px 9px);
   box-shadow: inset 0 0 0 1px var(--hatch);
@@ -100,6 +119,7 @@ h2 {
   height: 100%;
   background: var(--spent);
   animation: snap 1100ms cubic-bezier(0.22, 1.6, 0.42, 1);
+  transition: width 600ms ease-out;
 }
 
 @keyframes snap {
@@ -109,35 +129,36 @@ h2 {
 }
 
 .spend figcaption {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.25rem 1rem;
-  margin-top: 0.6rem;
-  font-size: 1.125rem;
+  margin-top: 0.35rem;
+  text-align: right;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .verdict {
-  max-width: 44rem;
-  margin: 1.25rem 0 0;
-  font-size: 1.25rem;
+  margin: 0.75rem 0 0.25rem;
   font-weight: 500;
-  font-stretch: 106%;
-  line-height: 1.35;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  text-wrap: balance;
+}
+
+.quiet {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
 }
 
-.chart-title {
-  margin: 0 0 0.5rem;
-  color: var(--muted);
-  font-size: 0.875rem;
+.notice {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid var(--tier-sonnet);
+  background: color-mix(in srgb, var(--hatch) 18%, transparent);
 }
 
 .chart {
   position: relative;
-  margin-bottom: 1.5rem;
   touch-action: pan-y;
 }
 
@@ -161,11 +182,6 @@ h2 {
 .move-label {
   fill: var(--ink);
   font-weight: 500;
-}
-
-.band {
-  fill: var(--tier-haiku);
-  fill-opacity: 0.35;
 }
 
 .trend {
@@ -216,81 +232,84 @@ h2 {
   color: var(--muted);
 }
 
-h3 {
-  margin: 1.75rem 0 0.4rem;
-  font-size: 1rem;
+.scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+  font-stretch: 90%;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+th,
+td {
+  padding: 0.3rem 1.25rem 0.3rem 0;
+  text-align: left;
+}
+
+th:last-child,
+td:last-child {
+  padding-right: 0;
+}
+
+thead th {
+  border-bottom: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+tbody th {
   font-weight: 600;
 }
 
-.moves {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.num {
+  text-align: right;
 }
 
-.moves li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 1rem;
-  padding: 0.3rem 0;
-  font-variant-numeric: tabular-nums;
+/* A new request flashes once, so the room can see it land. */
+.live tbody tr:first-child {
+  animation: arrive 1500ms ease-out;
 }
 
-.moves .quiet {
-  min-width: 6.5rem;
-  line-height: 1.7;
+@keyframes arrive {
+  from {
+    background: color-mix(in srgb, var(--hatch) 40%, transparent);
+  }
 }
 
-.facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem 3.5rem;
-  margin: 1.75rem 0 0;
-}
-
-dt {
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.quiet {
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-.notice {
-  padding: 0.6rem 0.8rem;
-  border-left: 3px solid var(--tier-sonnet);
-  background: color-mix(in srgb, var(--hatch) 18%, transparent);
-}
-
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1.25rem;
-  margin: 0 0 0.75rem;
-  padding: 0;
-  list-style: none;
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-.legend li {
+.answered {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
 }
 
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .swatch {
   flex: none;
   display: inline-block;
-  width: 0.75rem;
-  height: 0.75rem;
+  width: 0.625rem;
+  height: 0.625rem;
   border-radius: 2px;
 }
 
@@ -310,52 +329,18 @@ dd {
   background: var(--tier-opus);
 }
 
-.scroll {
-  overflow-x: auto;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9375rem;
-  font-stretch: 90%;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-th,
-td {
-  padding: 0.55rem 1.25rem 0.55rem 0;
-  border-bottom: 1px solid var(--rule);
-  text-align: left;
-}
-
-thead th {
-  color: var(--muted);
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-tbody th {
-  font-weight: 600;
-}
-
-.num {
-  text-align: right;
-}
-
 .mix {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  min-width: 16rem;
+  min-width: 14rem;
 }
 
 .mix-bar {
   display: flex;
   flex: 1;
   gap: 2px;
-  height: 0.75rem;
+  height: 0.625rem;
 }
 
 .mix-bar span {
@@ -372,13 +357,38 @@ tbody th {
 
 .mix-values {
   color: var(--muted);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
-.answered {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
+details {
+  margin-top: 1.5rem;
+}
+
+summary {
+  margin-bottom: 0.5rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.moves {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9375rem;
+}
+
+.moves li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1rem;
+  padding: 0.15rem 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.moves .quiet {
+  min-width: 6.5rem;
+  line-height: 1.7;
 }
 
 button {
@@ -441,7 +451,9 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .spend-fill {
+  .spend-fill,
+  .live tbody tr:first-child {
     animation: none;
+    transition: none;
   }
 }

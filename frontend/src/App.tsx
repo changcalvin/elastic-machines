@@ -21,9 +21,6 @@ type RequestRow = {
   tier: string | null;
   route: string;
   status: number | null;
-  input_tokens: number | null;
-  output_tokens: number | null;
-  cache_read_tokens: number | null;
   cost_usd: number | null;
 };
 type Estimate = { checks: number; worse: number; quality: number | null; low: number; high: number };
@@ -86,16 +83,17 @@ const TASKS: Record<string, string> = {
   analysis: "Analysis",
 };
 
-const REFRESH_MS = 15_000;
-const CHART_HEIGHT = 300;
-const PLOT = { top: 48, right: 12, bottom: 34, left: 48 };
+// ponytail: fast enough for a live demo, but each poll rereads every check. Slow it down for real traffic.
+const REFRESH_MS = 2_000;
+const LATEST_REQUESTS = 6;
+const CHART_HEIGHT = 200;
+const PLOT = { top: 48, right: 12, bottom: 26, left: 48 };
 const LABEL_ROWS = 3;
 const LABEL_CHAR_WIDTH = 6.6;
 const TOKEN_KEY = "elastic-admin-token";
 
 const usd = (value: number) => value.toLocaleString("en-US", { style: "currency", currency: "USD" });
-const smallUsd = (value: number) => (value > 0 && value < 0.01 ? `$${value.toFixed(4)}` : usd(value));
-const count = (value: number) => value.toLocaleString("en-US");
+const count =(value: number) => value.toLocaleString("en-US");
 const percent = (part: number, whole: number) => (whole ? `${((part / whole) * 100).toFixed(1)}%` : "0%");
 const share = (value: number) => `${(value * 100).toFixed(1)}%`;
 const totalCost = (t: Totals) => t.spend_usd + t.router_usd + t.checks_usd;
@@ -166,10 +164,7 @@ function SpendBar({ spent, baseline, net }: { spent: number; baseline: number; n
         <div className="spend-fill" style={{ width: `${filled}%` }} />
       </div>
       <figcaption>
-        <span>{usd(spent)} spent</span>
-        <span>
-          {usd(net)} saved, {percent(net, baseline)}
-        </span>
+        Saved {usd(net)}, {percent(net, baseline)}
       </figcaption>
     </figure>
   );
@@ -212,7 +207,7 @@ function QualityChart({ report }: { report: Quality }) {
   const first = trend[0].check;
   const last = trend[trend.length - 1].check;
   const goal = 1 - target;
-  const lowest = Math.floor(Math.min(goal, ...trend.map((point) => point.low)) * 20) / 20;
+  const lowest = Math.floor((Math.min(goal, ...trend.map((point) => point.quality)) - 0.01) * 20) / 20;
   const plotWidth = Math.max(width - PLOT.left - PLOT.right, 1);
   const plotHeight = CHART_HEIGHT - PLOT.top - PLOT.bottom;
   const x = (check: number) => PLOT.left + ((check - first) / (last - first || 1)) * plotWidth;
@@ -223,8 +218,6 @@ function QualityChart({ report }: { report: Quality }) {
   for (let tick = 1; tick >= lowest - 0.001; tick -= tickStep) ticks.push(tick);
 
   const line = trend.map((point) => `${x(point.check)},${y(point.quality)}`).join(" L");
-  const upper = trend.map((point) => `${x(point.check)},${y(point.high)}`).join(" L");
-  const lower = [...trend].reverse().map((point) => `${x(point.check)},${y(point.low)}`).join(" L");
   const moves = placeLabels(
     report.moves.filter((move) => move.position !== null && move.position >= first),
     x,
@@ -275,7 +268,6 @@ function QualityChart({ report }: { report: Quality }) {
               </text>
             </g>
           ))}
-          <path className="band" d={`M${upper} L${lower} Z`} />
           <line className="target" x1={PLOT.left} x2={width - PLOT.right} y1={y(goal)} y2={y(goal)} />
           <text className="axis" x={width - PLOT.right} y={y(goal)} dy="1.2em" textAnchor="end">
             Target {(goal * 100).toFixed(0)}%
@@ -313,66 +305,75 @@ function QualityChart({ report }: { report: Quality }) {
 }
 
 function QualitySection({ report }: { report: Quality }) {
-  const moves = [...report.moves].reverse().slice(0, 10);
   return (
     <section aria-labelledby="quality">
-      <h2 id="quality">Quality</h2>
+      <div className="heading">
+        <h2 id="quality">Quality</h2>
+        {report.trend.length > 0 && (
+          <p className="quiet">Last {report.rolling} checks rated as good as the requested model</p>
+        )}
+      </div>
       {report.trend.length === 0 ? (
         <p className="quiet">
           No quality checks yet. About {share(report.sample_rate)} of cheaper answers get compared with the requested model.
         </p>
       ) : (
-        <>
-          <p className="chart-title">
-            Share of the last {report.rolling} checked answers rated as good as the requested model, with a 95% range
-          </p>
-          <QualityChart report={report} />
-          <div className="scroll" tabIndex={0} role="region" aria-labelledby="quality">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Task or team</th>
-                  <th scope="col">Routing</th>
-                  <th scope="col" className="num">Matched</th>
-                  <th scope="col" className="num">95% range</th>
-                  <th scope="col" className="num">Checks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.segments.map((segment) => (
-                  <tr key={`${segment.kind}:${segment.name}`}>
-                    <th scope="row">{segmentName(segment.kind, segment.name)}</th>
-                    <td>{strictness(segment)}</td>
-                    <td className="num">{segment.quality === null ? "No checks" : share(segment.quality)}</td>
-                    <td className="num">{segment.checks ? `${share(segment.low)} to ${share(segment.high)}` : ""}</td>
-                    <td className="num">{count(segment.checks)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {moves.length > 0 && (
-            <>
-              <h3>Automatic changes</h3>
-              <ul className="moves">
-                {moves.map((move) => {
-                  const [kind, name] = move.segment.split(":");
-                  return (
-                    <li key={move.id}>
-                      {move.position !== null && <span className="quiet">Check {count(move.position)}</span>}
-                      <span>
-                        {move.to_rung > move.from_rung ? "Stricter" : "Looser"} routing for {segmentName(kind, name)}:{" "}
-                        {count(move.worse)} rated worse in {count(move.checks)} checks
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          )}
-        </>
+        <QualityChart report={report} />
       )}
     </section>
+  );
+}
+
+function Breakdown({ report }: { report: Quality }) {
+  if (report.segments.length === 0) return null;
+  const moves = [...report.moves].reverse().slice(0, 10);
+  return (
+    <details>
+      <summary>Quality by task and team</summary>
+      <div className="scroll" tabIndex={0} role="region" aria-label="Quality by task and team">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Task or team</th>
+              <th scope="col">Routing</th>
+              <th scope="col" className="num">Matched</th>
+              <th scope="col" className="num">95% range</th>
+              <th scope="col" className="num">Checks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.segments.map((segment) => (
+              <tr key={`${segment.kind}:${segment.name}`}>
+                <th scope="row">{segmentName(segment.kind, segment.name)}</th>
+                <td>{strictness(segment)}</td>
+                <td className="num">{segment.quality === null ? "No checks" : share(segment.quality)}</td>
+                <td className="num">{segment.checks ? `${share(segment.low)} to ${share(segment.high)}` : ""}</td>
+                <td className="num">{count(segment.checks)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {moves.length > 0 && (
+        <>
+          <h3>Automatic changes</h3>
+          <ul className="moves">
+            {moves.map((move) => {
+              const [kind, name] = move.segment.split(":");
+              return (
+                <li key={move.id}>
+                  {move.position !== null && <span className="quiet">Check {count(move.position)}</span>}
+                  <span>
+                    {move.to_rung > move.from_rung ? "Stricter" : "Looser"} routing for {segmentName(kind, name)}:{" "}
+                    {count(move.worse)} rated worse in {count(move.checks)} checks
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+    </details>
   );
 }
 
@@ -404,21 +405,22 @@ function TierMix({ tiers }: { tiers: Record<string, number> }) {
 function Teams({ teams }: { teams: Team[] }) {
   return (
     <section aria-labelledby="teams">
-      <h2 id="teams">Teams</h2>
-      <ul className="legend" aria-label="Tier mix, percent of requests from cheapest to most expensive">
-        {TIERS.map((tier) => (
-          <li key={tier.id}>
-            <span className={`swatch tier-${tier.id}`} />
-            {tier.label}
-          </li>
-        ))}
-      </ul>
+      <div className="heading">
+        <h2 id="teams">Teams</h2>
+        <ul className="legend" aria-label="Tier mix, percent of requests from cheapest to most expensive">
+          {TIERS.map((tier) => (
+            <li key={tier.id}>
+              <span className={`swatch tier-${tier.id}`} />
+              {tier.label}
+            </li>
+          ))}
+        </ul>
+      </div>
       <div className="scroll" tabIndex={0} role="region" aria-labelledby="teams">
         <table>
           <thead>
             <tr>
               <th scope="col">Team</th>
-              <th scope="col" className="num">Requests</th>
               <th scope="col" className="num">Spent</th>
               <th scope="col" className="num">Saved</th>
               <th scope="col" className="num">Moved up</th>
@@ -429,7 +431,6 @@ function Teams({ teams }: { teams: Team[] }) {
             {teams.map((team) => (
               <tr key={team.team}>
                 <th scope="row">{team.team}</th>
-                <td className="num">{count(team.requests)}</td>
                 <td className="num">{usd(totalCost(team))}</td>
                 <td className="num">{usd(saved(team))}</td>
                 <td className="num">{percent(team.escalated, team.conversations)}</td>
@@ -446,9 +447,11 @@ function Teams({ teams }: { teams: Team[] }) {
 function Requests({ rows }: { rows: RequestRow[] }) {
   return (
     <section aria-labelledby="requests">
-      <h2 id="requests">Latest requests</h2>
+      <div className="heading">
+        <h2 id="requests">Latest requests</h2>
+      </div>
       <div className="scroll" tabIndex={0} role="region" aria-labelledby="requests">
-        <table>
+        <table className="live">
           <thead>
             <tr>
               <th scope="col">Time</th>
@@ -456,8 +459,6 @@ function Requests({ rows }: { rows: RequestRow[] }) {
               <th scope="col">Asked for</th>
               <th scope="col">Answered by</th>
               <th scope="col">Why</th>
-              <th scope="col" className="num">Tokens in</th>
-              <th scope="col" className="num">Tokens out</th>
               <th scope="col" className="num">Cost</th>
             </tr>
           </thead>
@@ -465,11 +466,10 @@ function Requests({ rows }: { rows: RequestRow[] }) {
             {rows.map((row) => (
               <tr key={row.id}>
                 <td>
-                  {new Date(row.at * 1000).toLocaleString([], {
-                    month: "short",
-                    day: "numeric",
+                  {new Date(row.at * 1000).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit",
+                    second: "2-digit",
                   })}
                 </td>
                 <td>{row.team}</td>
@@ -487,8 +487,6 @@ function Requests({ rows }: { rows: RequestRow[] }) {
                 <td>
                   {row.status === 200 ? ROUTES[row.route] ?? row.route : `Failed, status ${row.status}`}
                 </td>
-                <td className="num">{count((row.input_tokens ?? 0) + (row.cache_read_tokens ?? 0))}</td>
-                <td className="num">{count(row.output_tokens ?? 0)}</td>
                 <td className="num">{row.cost_usd === null ? "No price" : `$${row.cost_usd.toFixed(4)}`}</td>
               </tr>
             ))}
@@ -521,7 +519,7 @@ export default function App() {
       try {
         const [nextSummary, nextRows, nextQuality] = await Promise.all([
           getJson<Summary>("/admin/summary", token),
-          getJson<RequestRow[]>("/admin/requests?limit=50", token),
+          getJson<RequestRow[]>(`/admin/requests?limit=${LATEST_REQUESTS}`, token),
           getJson<Quality>("/admin/quality", token),
         ]);
         if (!active) return;
@@ -549,6 +547,7 @@ export default function App() {
 
   const total = summary?.total;
   const net = total ? saved(total) : 0;
+  const overhead = total ? total.router_usd + total.checks_usd : 0;
   const overall = quality?.overall;
   return (
     <main className="page">
@@ -581,49 +580,28 @@ export default function App() {
             <SpendBar spent={totalCost(total)} baseline={total.baseline_usd} net={net} />
             {overall && overall.quality !== null ? (
               <p className="verdict">
-                Answers matched the requested model on {share(overall.quality)} of the last {count(overall.checks)} checks,
-                with a 95% range of {share(overall.low)} to {share(overall.high)}.
+                Quality matched the requested model on {share(overall.quality)} of {count(overall.checks)} checks (95% range{" "}
+                {(overall.low * 100).toFixed(1)}–{share(overall.high)}).
               </p>
             ) : (
               <p className="verdict">No quality checks yet, so this saving has no quality estimate.</p>
             )}
-            <dl className="facts">
-              <div>
-                <dt>Moved up after a re-ask</dt>
-                <dd>{percent(total.escalated, total.conversations)} of routed conversations</dd>
-              </div>
-              <div>
-                <dt>Routing cost, included in spend</dt>
-                <dd>{smallUsd(total.router_usd)}</dd>
-              </div>
-              <div>
-                <dt>Quality checks, included in spend</dt>
-                <dd>
-                  {usd(total.checks_usd)}, {percent(total.checks_usd, net + total.checks_usd)} of savings
-                </dd>
-              </div>
-              {quality && (
-                <div>
-                  <dt>Check budget used today</dt>
-                  <dd>
-                    {usd(quality.spent_today_usd)} of {usd(quality.daily_budget_usd)}
-                  </dd>
-                </div>
-              )}
-              <div>
-                <dt>Requests</dt>
-                <dd>{count(total.requests)}</dd>
-              </div>
-            </dl>
-            {total.unpriced > 0 && (
-              <p className="quiet">
-                {count(total.unpriced)} requests used models with no listed price, so they aren't in these totals.
+            <p className="quiet">
+              {count(total.requests)} requests. {percent(total.escalated, total.conversations)} moved up after a re-ask.
+              Routing and checks cost {usd(overhead)}, {percent(overhead, net + overhead)} of savings.
+              {total.unpriced > 0 &&
+                ` ${count(total.unpriced)} requests used models with no listed price, so they aren't in these totals.`}
+            </p>
+            {quality && quality.spent_today_usd >= quality.daily_budget_usd && (
+              <p className="notice" role="status">
+                Quality checks have stopped for today. They reached the {usd(quality.daily_budget_usd)} daily budget.
               </p>
             )}
           </section>
           {quality && <QualitySection report={quality} />}
-          <Teams teams={summary.teams} />
           <Requests rows={rows} />
+          <Teams teams={summary.teams} />
+          {quality && <Breakdown report={quality} />}
         </>
       )}
     </main>
