@@ -1,0 +1,15 @@
+[project]
+name = "elastic-machines-gateway"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["anthropic", "fastapi", "httpx", "uvicorn[standard]"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["gateway"]
