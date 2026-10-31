@@ -99,7 +99,13 @@ h2 {
 .spend-fill {
   height: 100%;
   background: var(--spent);
-  transition: width 1100ms cubic-bezier(0.22, 1.6, 0.42, 1);
+  animation: snap 1100ms cubic-bezier(0.22, 1.6, 0.42, 1);
+}
+
+@keyframes snap {
+  from {
+    width: 100%;
+  }
 }
 
 .spend figcaption {
@@ -436,6 +442,6 @@ button {
 
 @media (prefers-reduced-motion: reduce) {
   .spend-fill {
-    transition: none;
+    animation: none;
   }
 }

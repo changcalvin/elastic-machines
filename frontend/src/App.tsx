@@ -155,11 +155,6 @@ function SignIn({ onSubmit, rejected }: { onSubmit: (token: string) => void; rej
 }
 
 function SpendBar({ spent, baseline, net }: { spent: number; baseline: number; net: number }) {
-  const [settled, setSettled] = useState(false);
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setSettled(true));
-    return () => cancelAnimationFrame(frame);
-  }, []);
   const filled = baseline ? Math.min((spent / baseline) * 100, 100) : 100;
   return (
     <figure className="spend">
@@ -168,7 +163,7 @@ function SpendBar({ spent, baseline, net }: { spent: number; baseline: number; n
         role="img"
         aria-label={`${usd(spent)} spent out of ${usd(baseline)}, ${percent(net, baseline)} saved`}
       >
-        <div className="spend-fill" style={{ width: `${settled ? filled : 100}%` }} />
+        <div className="spend-fill" style={{ width: `${filled}%` }} />
       </div>
       <figcaption>
         <span>{usd(spent)} spent</span>

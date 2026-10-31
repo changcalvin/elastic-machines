@@ -92,19 +92,20 @@ def answered(key: str, prompt: str) -> None:
     db.execute("UPDATE conversations SET last_prompt = ?, last_at = ? WHERE key = ?", (prompt, time.time(), key))
 
 
-def log(**row) -> None:
-    row["at"] = row.get("at", time.time())
-    row["answers"] = json.dumps(row["answers"]) if row.get("answers") else None
+def insert(table: str, row: dict) -> int:
+    row = {**row, "at": time.time()}
     columns = ", ".join(row)
     values = ", ".join(f":{name}" for name in row)
-    db.execute(f"INSERT INTO requests ({columns}) VALUES ({values})", row)
+    return db.execute(f"INSERT INTO {table} ({columns}) VALUES ({values})", row).lastrowid
+
+
+def log(**row) -> None:
+    row["answers"] = json.dumps(row["answers"]) if row.get("answers") else None
+    insert("requests", row)
 
 
 def log_check(**row) -> int:
-    row["at"] = time.time()
-    columns = ", ".join(row)
-    values = ", ".join(f":{name}" for name in row)
-    return db.execute(f"INSERT INTO checks ({columns}) VALUES ({values})", row).lastrowid
+    return insert("checks", row)
 
 
 def spent_today() -> float:
@@ -211,7 +212,6 @@ def quality() -> dict:
 
     return {
         "target": TARGET,
-        "window": QUALITY_WINDOW,
         "rolling": ROLLING_CHECKS,
         "overall": estimate(sum(r["verdict"] == "worse" for r in recent), len(recent)),
         "segments": segments,
