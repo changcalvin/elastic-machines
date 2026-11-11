@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  /* Neutral base with one blue accent. Corners are 4px; only legend swatches, too small for that, are 2px. */
+  /* Neutral base with one blue accent. Corners are 4px; only tier swatches, too small for that, are 2px. */
   --paper: #f8f9fa;
   --ink: #16191d;
   --muted: #59616c;
@@ -12,6 +12,9 @@
   --tier-haiku-high: #5598e7;
   --tier-sonnet: #256abf;
   --tier-opus: #104281;
+  /* Built-in easings are too soft to feel intentional. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -49,21 +52,76 @@ body {
 }
 
 .page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
   max-width: 60rem;
   margin: 0 auto;
-  padding: 1.25rem 1rem 3rem;
+  padding: 1.25rem 1rem 0;
+}
+
+.page > main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.page > main.analytics {
+  padding-bottom: 3rem;
 }
 
 .top {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: baseline;
+  gap: 0.5rem 1.75rem;
   margin-bottom: 1.75rem;
 }
 
 .brand {
   font-weight: 600;
   font-stretch: 112%;
+}
+
+.top nav {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.tab {
+  padding: 0 0 0.15rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  transition:
+    color 150ms ease,
+    border-color 150ms ease,
+    transform 160ms var(--ease-out);
+}
+
+.tab[aria-current="page"] {
+  border-bottom-color: currentColor;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Every pressable thing confirms the press. */
+.tab:active,
+.link:not(:disabled):active,
+.send:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tab:hover,
+  .link:not(:disabled):hover {
+    color: var(--ink);
+  }
+}
+
+.new-chat {
+  margin-left: auto;
 }
 
 h1 {
@@ -84,13 +142,220 @@ h2 {
   font-stretch: 112%;
 }
 
-h3 {
-  margin: 1.25rem 0 0.25rem;
-  font-size: 0.9375rem;
-  font-weight: 600;
+/* Chat: one centred column, the composer pinned to the bottom of the window. */
+.hello,
+.thread,
+.composer {
+  width: 100%;
+  max-width: 46rem;
+  margin-inline: auto;
 }
 
-/* The one loud element: spend snaps back from the baseline to what was actually paid. */
+.hello {
+  margin-block: auto;
+  text-align: center;
+}
+
+.thread {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: 1.5rem;
+  margin-block: 0;
+  padding: 0 0 1.5rem;
+  list-style: none;
+}
+
+.turn {
+  overflow-wrap: anywhere;
+}
+
+.turn.user {
+  white-space: pre-wrap;
+  justify-self: end;
+  max-width: 85%;
+  padding: 0.55rem 0.85rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--hatch) 16%, transparent);
+}
+
+/* Markdown in answers, sized for reading inside a chat rather than as page headings. */
+.turn.assistant {
+  line-height: 1.6;
+}
+
+.turn.assistant > :first-child {
+  margin-top: 0;
+}
+
+.turn.assistant > :last-child {
+  margin-bottom: 0;
+}
+
+.turn.assistant :is(p, ul, ol, pre, blockquote) {
+  margin: 0 0 0.9em;
+}
+
+.turn.assistant :is(h1, h2, h3, h4, h5, h6) {
+  max-width: none;
+  margin: 1.4em 0 0.5em;
+  font-size: 1.0625rem;
+  font-stretch: 105%;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+
+.turn.assistant h1 {
+  font-size: 1.375rem;
+}
+
+.turn.assistant h2 {
+  font-size: 1.1875rem;
+}
+
+/* The thread hides its own numbering, and list-style inherits, so nested lists need theirs back. */
+.turn.assistant :is(ul, ol) {
+  padding-left: 1.4em;
+}
+
+.turn.assistant ul {
+  list-style: disc;
+}
+
+.turn.assistant ol {
+  list-style: decimal;
+}
+
+.turn.assistant li + li {
+  margin-top: 0.25em;
+}
+
+.turn.assistant code {
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875em;
+}
+
+.turn.assistant pre {
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  line-height: 1.5;
+  overflow-wrap: normal;
+}
+
+.turn.assistant pre code {
+  padding: 0;
+  background: none;
+}
+
+.turn.assistant blockquote {
+  padding-left: 0.9rem;
+  border-left: 3px solid var(--rule);
+  color: var(--muted);
+}
+
+.turn.assistant a {
+  color: var(--tier-sonnet);
+  text-underline-offset: 2px;
+}
+
+.turn.assistant hr {
+  margin: 1.4em 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+/* An answer that hasn't sent any text yet. */
+.turn.assistant:empty::before {
+  content: "Thinking";
+  color: var(--muted);
+  animation: pulse 1200ms ease-in-out infinite alternate;
+}
+
+@keyframes pulse {
+  to {
+    opacity: 0.35;
+  }
+}
+
+.composer {
+  position: sticky;
+  bottom: 0;
+  padding-bottom: 1.25rem;
+  background: var(--paper);
+}
+
+/* Text fades out under the composer instead of being cut off at a hard edge. */
+.composer::before {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: 1.5rem;
+  background: linear-gradient(transparent, var(--paper));
+  pointer-events: none;
+}
+
+.composer .notice {
+  margin: 0 0 0.75rem;
+}
+
+.composer form {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--muted);
+  border-radius: 4px;
+  background: var(--paper);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+/* The box is focused almost all the time, so the ring is calm: the border thickens instead of a blue halo. */
+.composer form:focus-within {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+
+.composer textarea {
+  flex: 1;
+  min-height: 2.25rem;
+  max-height: 12rem;
+  padding: 0.35rem 0.4rem;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  field-sizing: content;
+}
+
+.send {
+  padding: 0.45rem 0.95rem;
+  border: 0;
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 600;
+  transition:
+    opacity 150ms ease,
+    transform 160ms var(--ease-out);
+}
+
+.send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Analytics: spend snaps back from what Opus would have cost to what was actually paid. */
 .spend {
   margin: 0;
 }
@@ -107,8 +372,10 @@ h3 {
   height: 100%;
   background: var(--spent);
   transform-origin: left;
-  animation: snap 1100ms cubic-bezier(0.22, 1.6, 0.42, 1);
-  transition: transform 600ms ease-out;
+  /* Explains the saving once, on arrival. No overshoot: a data bar shouldn't dip below the real number. */
+  animation: snap 700ms var(--ease-out);
+  /* New messages retarget the bar mid-flight, which a transition handles and a keyframe can't. */
+  transition: transform 300ms var(--ease-in-out);
 }
 
 @keyframes snap {
@@ -118,18 +385,10 @@ h3 {
 }
 
 .spend figcaption {
-  margin-top: 0.35rem;
+  margin: 0.35rem 0 0.5rem;
   text-align: right;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-}
-
-.verdict {
-  margin: 0.75rem 0 0.25rem;
-  font-weight: 500;
-  line-height: 1.4;
-  font-variant-numeric: tabular-nums;
-  text-wrap: balance;
 }
 
 .quiet {
@@ -140,85 +399,21 @@ h3 {
 }
 
 .notice {
-  margin: 0.75rem 0 0;
+  margin: 0 0 1rem;
   padding: 0.6rem 0.8rem;
   border-left: 3px solid var(--tier-sonnet);
-  background: color-mix(in srgb, var(--hatch) 18%, transparent);
+  background: color-mix(in srgb, var(--hatch) 18%, var(--paper));
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
 }
 
-.chart {
-  position: relative;
-  touch-action: pan-y;
-}
-
-.chart svg {
-  display: block;
-}
-
-.grid {
-  stroke: var(--rule);
-  stroke-width: 1;
-}
-
-.axis,
-.move-label {
-  fill: var(--muted);
-  font-size: 0.8125rem;
-  font-stretch: 90%;
-  font-variant-numeric: tabular-nums;
-}
-
-.move-label {
-  fill: var(--ink);
-  font-weight: 500;
-}
-
-.trend {
-  fill: none;
-  stroke: var(--tier-sonnet);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-}
-
-.target {
-  stroke: var(--ink);
-  stroke-width: 1;
-}
-
-.move,
-.crosshair {
-  stroke: var(--muted);
-  stroke-width: 1;
-}
-
-.point {
-  fill: var(--tier-sonnet);
-  stroke: var(--paper);
-  stroke-width: 2;
-}
-
-.tooltip {
-  position: absolute;
-  z-index: 1;
-  display: grid;
-  gap: 0.1rem;
-  padding: 0.45rem 0.65rem;
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  background: var(--paper);
-  font-size: 0.8125rem;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.tooltip strong {
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.tooltip span {
-  color: var(--muted);
+/* Errors ease in rather than popping into the layout. */
+@starting-style {
+  .notice {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
 .scroll {
@@ -252,46 +447,14 @@ thead th {
   font-weight: 500;
 }
 
-tbody th {
-  font-weight: 600;
-}
-
 .num {
   text-align: right;
-}
-
-/* A new request flashes once, so the room can see it land. */
-.live tbody tr:first-child {
-  animation: arrive 1500ms ease-out;
-}
-
-@keyframes arrive {
-  from {
-    background: color-mix(in srgb, var(--hatch) 40%, transparent);
-  }
 }
 
 .answered {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-}
-
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.1rem 1rem;
-  margin: 0 0 0.5rem;
-  padding: 0;
-  list-style: none;
-  color: var(--muted);
-  font-size: 0.8125rem;
-}
-
-.legend li {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
 }
 
 .swatch {
@@ -318,68 +481,6 @@ tbody th {
   background: var(--tier-opus);
 }
 
-.mix {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  min-width: 14rem;
-}
-
-.mix-bar {
-  display: flex;
-  flex: 1;
-  gap: 2px;
-  height: 0.625rem;
-}
-
-.mix-bar span {
-  min-width: 2px;
-}
-
-.mix-bar span:first-child {
-  border-radius: 4px 0 0 4px;
-}
-
-.mix-bar span:last-child {
-  border-radius: 0 4px 4px 0;
-}
-
-.mix-values {
-  color: var(--muted);
-  font-size: 0.8125rem;
-}
-
-details {
-  margin-top: 1.5rem;
-}
-
-summary {
-  margin-bottom: 0.5rem;
-  color: var(--muted);
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-
-.moves {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 0.9375rem;
-}
-
-.moves li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 1rem;
-  padding: 0.15rem 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.moves .quiet {
-  min-width: 6.5rem;
-  line-height: 1.7;
-}
-
 button {
   font: inherit;
   cursor: pointer;
@@ -392,61 +493,25 @@ button {
   color: var(--muted);
   text-decoration: underline;
   text-underline-offset: 2px;
+  transition:
+    color 150ms ease,
+    opacity 150ms ease,
+    transform 160ms var(--ease-out);
 }
 
-.signin {
-  max-width: 26rem;
-  padding-top: clamp(4rem, 18vh, 10rem);
+.link:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
-.signin h1 {
-  font-size: 2.25rem;
-}
-
-.signin form {
-  display: grid;
-  gap: 0.5rem;
-}
-
-.signin input {
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--muted);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-}
-
-.signin button {
-  justify-self: start;
-  margin-top: 0.5rem;
-  padding: 0.55rem 1rem;
-  border: 0;
-  border-radius: 4px;
-  background: var(--ink);
-  color: var(--paper);
-  font-weight: 600;
-}
-
-.signin button:active {
-  transform: translateY(1px);
-}
-
-.signin p {
-  margin: 0.5rem 0 0;
-}
-
-.empty pre {
-  padding: 0.75rem 1rem;
-  overflow-x: auto;
-  border-left: 3px solid var(--tier-sonnet);
-  font-size: 0.9375rem;
-}
-
+/* Reduced motion drops movement but keeps fades, which still help explain what changed. */
 @media (prefers-reduced-motion: reduce) {
-  .spend-fill,
-  .live tbody tr:first-child {
+  .spend-fill {
     animation: none;
     transition: none;
+  }
+
+  .notice {
+    transition-property: opacity;
   }
 }

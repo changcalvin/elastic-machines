@@ -80,7 +80,8 @@ async def messages(request: Request):
 
     requested = body["model"]
     ceiling = CEILINGS.get(requested)
-    decision = await decide(http, body, team, request.headers.get("x-claude-code-session-id"))
+    session = request.headers.get("x-claude-code-session-id")
+    decision = await decide(http, body, team, session)
 
     model, payload = requested, raw
     if decision.tier is not None and decision.tier != ceiling:
@@ -102,6 +103,7 @@ async def messages(request: Request):
     def finish(status: int, usage: dict, stop_reason: str | None, answer: str = "") -> None:
         store.log(
             team=team,
+            session=session,
             conversation=decision.key,
             requested_model=requested,
             model=model,
@@ -173,6 +175,15 @@ async def count_tokens(request: Request):
     except httpx.HTTPError:
         return error(502, "api_error", "could not reach the Claude API")
     return Response(upstream.content, upstream.status_code, client_headers(upstream))
+
+
+@app.get("/usage/{session}")
+async def usage(session: str, request: Request):
+    """One chat's requests, for its savings page. A gateway key only sees its own team's sessions."""
+    team = TEAMS.get(credential(request))
+    if team is None:
+        return error(401, "authentication_error", "invalid gateway key")
+    return store.session_requests(team, session)
 
 
 @app.get("/admin/summary", dependencies=[Depends(require_admin)])

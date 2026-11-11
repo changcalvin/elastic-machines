@@ -71,17 +71,17 @@ Spending is capped at $25 a day by default. Prompts over 50K tokens are skipped,
 
 You need Python 3.12 or later and Node 20.19 or later. Commands are for macOS and Linux.
 
-### Try the demo, no API keys needed
+### Chat through the gateway
 
-This replays a simulated request stream with a drift partway through, using stand-ins for Jev and Claude. The numbers are made up, so it shows the system working rather than how good the models are.
+Requires a Claude API key and a [DigitalOcean inference key](https://docs.digitalocean.com/products/inference/how-to/use-system-one-api/index.html.md) for Jev. Without the Jev key, every message stays on Opus and nothing is saved. This path hasn't been tested with live keys yet.
 
 ```sh
 # Terminal 1
 cd backend
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-DB_PATH=sim.db .venv/bin/python simulate_drift.py
-DB_PATH=sim.db SHADOW_DAILY_BUDGET_USD=100 .venv/bin/uvicorn gateway.main:app --env-file .env.example
+cp .env.example .env    # then fill it in
+.venv/bin/uvicorn gateway.main:app --env-file .env
 
 # Terminal 2
 cd frontend
@@ -89,18 +89,11 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173 and sign in with the token `change-me`.
+Open http://localhost:5173. There's no sign-in: the dev server adds the first key in `GATEWAY_KEYS` from `backend/.env` to each request. The chat page asks for Opus 5.5 and the gateway routes each message. The analytics page shows what the current chat cost against sending every message to Opus.
 
-### Run it for real
-
-Requires a Claude API key and a [DigitalOcean inference key](https://docs.digitalocean.com/products/inference/how-to/use-system-one-api/index.html.md) for Jev. This path hasn't been tested with live keys yet.
+To point Claude Code at the gateway instead:
 
 ```sh
-cd backend
-cp .env.example .env    # then fill it in
-.venv/bin/uvicorn gateway.main:app --env-file .env
-
-# Point Claude Code at the gateway, using a key from GATEWAY_KEYS
 export ANTHROPIC_BASE_URL=http://localhost:8000
 export ANTHROPIC_AUTH_TOKEN=<gateway key>
 ```
@@ -147,7 +140,7 @@ backend/
     tuning.py     the sequential test and the strictness ladder
   test_gateway.py
   simulate_drift.py
-frontend/         admin view: React and Vite
+frontend/         chat and per-chat savings: React and Vite
 eval/             empty until the eval starts
 ```
 
@@ -155,6 +148,7 @@ eval/             empty until the eval starts
 | --- | --- |
 | `POST /v1/messages` | The Claude Messages API, routed |
 | `POST /v1/messages/count_tokens` | Token counting, passed through |
+| `GET /usage/{session}` | One chat's requests and costs, for the gateway key's own team |
 | `GET /admin/summary`, `/admin/quality`, `/admin/requests` | Admin data, which needs `ADMIN_TOKEN` |
 
 [PLAN.md](PLAN.md) has the architecture, the decisions behind it and why the backend is Python rather than Rust. [COURSE_OVERVIEW.md](COURSE_OVERVIEW.md) has the course requirements and deadlines.

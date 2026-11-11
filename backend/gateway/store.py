@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS requests (
     id INTEGER PRIMARY KEY,
     at REAL NOT NULL,
     team TEXT NOT NULL,
+    session TEXT,  -- the client's session id, so a chat can look up its own costs
     conversation TEXT,
     requested_model TEXT NOT NULL,
     model TEXT NOT NULL,
@@ -74,6 +75,9 @@ db.row_factory = sqlite3.Row
 db.execute("PRAGMA journal_mode=WAL")
 db.execute("PRAGMA synchronous=NORMAL")
 db.executescript(SCHEMA)
+if "session" not in {column["name"] for column in db.execute("PRAGMA table_info(requests)")}:
+    db.execute("ALTER TABLE requests ADD COLUMN session TEXT")  # databases made before sessions were logged
+db.execute("CREATE INDEX IF NOT EXISTS requests_by_session ON requests (session)")
 
 
 def conversation(key: str) -> sqlite3.Row | None:
@@ -221,11 +225,17 @@ def quality() -> dict:
     }
 
 
+REQUEST_COLUMNS = """id, at, team, requested_model, model, tier, route, status, stop_reason,
+    input_tokens, output_tokens, cache_read_tokens, cost_usd, baseline_usd, router_usd, router_ms"""
+
+
 def recent(limit: int) -> list[dict]:
+    rows = db.execute(f"SELECT {REQUEST_COLUMNS} FROM requests ORDER BY id DESC LIMIT ?", (limit,))
+    return [dict(row) for row in rows]
+
+
+def session_requests(team: str, session: str) -> list[dict]:
     rows = db.execute(
-        """SELECT id, at, team, requested_model, model, tier, route, status, stop_reason,
-                  input_tokens, output_tokens, cache_read_tokens, cost_usd, router_ms
-           FROM requests ORDER BY id DESC LIMIT ?""",
-        (limit,),
+        f"SELECT {REQUEST_COLUMNS} FROM requests WHERE session = ? AND team = ? ORDER BY id", (session, team)
     )
     return [dict(row) for row in rows]

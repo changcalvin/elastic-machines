@@ -417,6 +417,17 @@ def test_admin_summary_rolls_up_by_team(net):
     assert "prompt" not in rows[0]
 
 
+def test_a_chat_sees_only_its_own_session_costs(net):
+    ask(headers={"x-claude-code-session-id": "chat-1"})
+    ask("something else", headers={"x-claude-code-session-id": "chat-2"})
+    ask(key="other-key", headers={"x-claude-code-session-id": "chat-1"})  # another team reusing the id
+    rows = call("GET", "/usage/chat-1", headers={"x-api-key": "good-key"}).json()
+    assert len(rows) == 1
+    assert (rows[0]["tier"], rows[0]["route"]) == ("haiku", "routed")
+    assert rows[0]["baseline_usd"] > rows[0]["cost_usd"] > 0
+    assert call("GET", "/usage/chat-1", headers={"x-api-key": "nope"}).status_code == 401
+
+
 def test_tiers_line_up_with_jev_levels():
     from gateway.policy import QUESTIONS
 
