@@ -1,4 +1,5 @@
-"""Drop-in Claude API gateway. Forwards everything it doesn't need to change, byte for byte."""
+"""Drop-in Claude API gateway. Forwards everything it doesn't need to change, byte for byte, and
+answers GPT and Gemini requests in the same Claude format."""
 import hmac
 import json
 import os
@@ -8,8 +9,8 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from . import shadow, store
-from .policy import CEILINGS, TIERS, Tier
+from . import providers, shadow, store
+from .policy import CEILINGS, LABEL_OF, LEVEL_OF, TIERS, Tier, model_label, provider_of
 from .pricing import cost_usd
 from .router import decide, text_of
 from .sse import Meter, events
@@ -24,6 +25,7 @@ if not ADMIN_TOKEN:
 # Everything else is forwarded: Claude Code's gateway docs say to treat headers as an open list.
 DROP_REQUEST_HEADERS = {"host", "content-length", "connection", "authorization", "x-api-key", "accept-encoding"}
 DROP_RESPONSE_HEADERS = {"content-length", "content-encoding", "transfer-encoding", "connection", "date", "server"}
+PROVIDER_NAMES = {"anthropic": "Claude", "openai": "OpenAI", "gemini": "Gemini"}
 
 app = FastAPI(title="Elastic Machines")
 http = httpx.AsyncClient(
@@ -79,25 +81,40 @@ async def messages(request: Request):
         return error(400, "invalid_request_error", "model: field required")
 
     requested = body["model"]
+    provider = provider_of(requested)
+    claude = provider == "anthropic"
+    if not claude and not providers.KEYS[provider]:
+        return error(400, "invalid_request_error", f"{requested} needs {provider.upper()}_API_KEY set on the gateway")
+    if not claude and not providers.text_only(body):
+        return error(400, "invalid_request_error", f"{requested} only takes text conversations through this gateway")
+
+    tiers = TIERS[provider]
     ceiling = CEILINGS.get(requested)
     session = request.headers.get("x-claude-code-session-id")
     decision = await decide(http, body, team, session)
+    routed = decision.tier is not None and decision.tier != ceiling
+    model = tiers[decision.tier].model if routed else requested
 
-    model, payload = requested, raw
-    if decision.tier is not None and decision.tier != ceiling:
-        model = TIERS[decision.tier].model
-        payload = rewrite(body, TIERS[decision.tier])
+    def outgoing(cheaper: bool, stream: bool | None = None) -> httpx.Request:
+        """This request in its provider's format, on the routed model or as received."""
+        sent = body if stream is None else {**body, "stream": stream}
+        if not claude:
+            return providers.build(http, provider, sent, tiers[decision.tier].model if cheaper else requested)
+        if cheaper:
+            return upstream_request(request, rewrite(sent, tiers[decision.tier]))
+        return upstream_request(request, raw if stream is None else json.dumps(sent).encode())
 
     check = None
     if shadow.wanted(body, decision.tier, ceiling):
         check = shadow.Check(
-            request=upstream_request(request, json.dumps({**body, "stream": True}).encode()),
+            request=outgoing(False, stream=True),
             body=body,
             team=team,
             task=decision.task,
             rung=decision.rung,
-            tier=TIERS[decision.tier].name,
+            tier=tiers[decision.tier].name,
             requested=requested,
+            provider=provider,
         )
 
     def finish(status: int, usage: dict, stop_reason: str | None, answer: str = "") -> None:
@@ -107,7 +124,7 @@ async def messages(request: Request):
             conversation=decision.key,
             requested_model=requested,
             model=model,
-            tier=None if decision.tier is None else TIERS[decision.tier].name,
+            tier=None if decision.tier is None else tiers[decision.tier].name,
             route=decision.route,
             answers=decision.answers,
             router_ms=decision.router_ms,
@@ -129,41 +146,48 @@ async def messages(request: Request):
             shadow.start(http, check, answer, usage)
 
     try:
-        upstream = await http.send(upstream_request(request, payload), stream=True)
-        if upstream.status_code in (400, 404) and payload is not raw:
+        upstream = await http.send(outgoing(routed), stream=True)
+        if upstream.status_code in (400, 404) and routed:
             # A cheaper model rejected something the requested one accepts. Round up and resend as received.
             await upstream.aclose()
             store.set_tier(decision.key, ceiling)
             decision = decision._replace(tier=ceiling, route="retried")
-            model = requested
-            upstream = await http.send(upstream_request(request, raw), stream=True)
+            model, routed = requested, False
+            upstream = await http.send(outgoing(False), stream=True)
 
         if upstream.status_code != 200 or not body.get("stream"):
             content = await upstream.aread()
             usage, stop_reason, answer = {}, None, ""
             if upstream.status_code == 200:
-                message = json.loads(content)
+                message = json.loads(content) if claude else providers.claude_message(provider, json.loads(content))
                 usage, stop_reason = message.get("usage") or {}, message.get("stop_reason")
                 answer = text_of(message)
                 message["model"] = requested
                 content = json.dumps(message).encode()
+            elif not claude:
+                content = providers.claude_error(upstream.status_code, content)
             finish(upstream.status_code, usage, stop_reason, answer)
-            return Response(content, upstream.status_code, client_headers(upstream))
+            headers = client_headers(upstream) if claude else {"content-type": "application/json"}
+            return Response(content, upstream.status_code, headers)
     except httpx.HTTPError:
         finish(502, {}, None)
-        return error(502, "api_error", "could not reach the Claude API")
+        return error(502, "api_error", f"could not reach the {PROVIDER_NAMES[provider]} API")
+
+    source = events(upstream) if claude else providers.claude_events(provider, upstream)
 
     async def relay():
         meter = Meter(requested, capture=check is not None)
         try:
-            async for event in events(upstream):
+            async for event in source:
                 yield meter.read(event) + b"\n\n"
         finally:
             finish(200, meter.usage, meter.stop_reason, "".join(meter.text))
             with anyio.CancelScope(shield=True):  # a cancelled client must not leak the upstream connection
                 await upstream.aclose()
 
-    return StreamingResponse(relay(), headers=client_headers(upstream))
+    if claude:
+        return StreamingResponse(relay(), headers=client_headers(upstream))
+    return StreamingResponse(relay(), media_type="text/event-stream", headers={"cache-control": "no-cache"})
 
 
 @app.post("/v1/messages/count_tokens")
@@ -177,13 +201,34 @@ async def count_tokens(request: Request):
     return Response(upstream.content, upstream.status_code, client_headers(upstream))
 
 
+@app.get("/v1/models")
+async def models(request: Request):
+    """The models a client can ask for and have routed, from every provider with a key set."""
+    if credential(request) not in TEAMS:
+        return error(401, "authentication_error", "invalid gateway key")
+    data = [
+        {"type": "model", "id": model, "display_name": model_label(model)}
+        for model in CEILINGS
+        if provider_of(model) in providers.configured()
+    ]
+    return {"data": data, "has_more": False, "first_id": data[0]["id"], "last_id": data[-1]["id"]}
+
+
 @app.get("/usage/{session}")
 async def usage(session: str, request: Request):
     """One chat's requests, for its savings page. A gateway key only sees its own team's sessions."""
     team = TEAMS.get(credential(request))
     if team is None:
         return error(401, "authentication_error", "invalid gateway key")
-    return store.session_requests(team, session)
+    return [
+        {
+            **row,
+            "answered_by": LABEL_OF.get(row["tier"]) or model_label(row["model"]),
+            "level": LEVEL_OF.get(row["tier"]),
+            "asked_for": model_label(row["requested_model"]),
+        }
+        for row in store.session_requests(team, session)
+    ]
 
 
 @app.get("/admin/summary", dependencies=[Depends(require_admin)])

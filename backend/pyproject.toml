@@ -1,6 +1,8 @@
 [project]
-name = "elastic-machines-gateway"
+name = "elastic-machines"
 version = "0.1.0"
+description = "A drop-in LLM gateway that answers each request with the cheapest model likely to do it as well as the one you asked for."
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = ["anthropic", "fastapi", "httpx", "uvicorn[standard]"]
 
@@ -8,7 +10,7 @@ dependencies = ["anthropic", "fastapi", "httpx", "uvicorn[standard]"]
 dev = ["pytest"]
 
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]

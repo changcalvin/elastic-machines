@@ -9,7 +9,7 @@ from typing import NamedTuple
 
 import httpx
 
-from . import judge, store
+from . import judge, providers, store
 from .pricing import cost_usd
 from .router import text_of
 from .sse import Meter, events
@@ -33,6 +33,7 @@ class Check(NamedTuple):
     rung: int | None
     tier: str
     requested: str
+    provider: str = "anthropic"
 
 
 def harmless(body: dict) -> bool:
@@ -70,7 +71,8 @@ async def reference_answer(http: httpx.AsyncClient, check: Check) -> tuple[str, 
         if upstream.status_code != 200:
             return "", 0.0
         meter = Meter(check.requested, capture=True)
-        async for event in events(upstream):
+        claude = check.provider == "anthropic"
+        async for event in events(upstream) if claude else providers.claude_events(check.provider, upstream):
             meter.read(event)
     finally:
         await upstream.aclose()

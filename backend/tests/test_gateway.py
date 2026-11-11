@@ -1,10 +1,13 @@
-"""Fake Jev and Claude API behind httpx.MockTransport. Run with: pytest"""
+"""Fake Jev, Claude, OpenAI and Gemini APIs behind httpx.MockTransport. Run with: pytest"""
 import asyncio
 import json
 import os
+from pathlib import Path
 
 os.environ.update(
     ANTHROPIC_API_KEY="sk-upstream",
+    OPENAI_API_KEY="sk-openai",
+    GEMINI_API_KEY="gemini-key",
     MODEL_ACCESS_KEY="jev-key",
     ADMIN_TOKEN="admin-token",
     GATEWAY_KEYS="good-key:platform,other-key:support",
@@ -21,8 +24,8 @@ import httpx2
 import pytest
 from anthropic import AsyncAnthropic
 
-from gateway import judge, main, shadow, store, tuning
-from gateway.policy import CONFIDENCE, TIERS, choose_tier
+from gateway import judge, main, providers, shadow, store, tuning
+from gateway.policy import CEILINGS, CONFIDENCE, LEVELS, TIERS, choose_tier, provider_of
 from gateway.pricing import cost_usd
 from gateway.router import JEV_URL
 from gateway.sse import Meter
@@ -59,6 +62,10 @@ class FakeNetwork:
             return httpx.Response(status, json={"type": "error", "error": {"message": "nope"}}, headers={"retry-after": "7"})
         body = json.loads(request.content)
         stop = self.stop_reason
+        if str(request.url).startswith(providers.OPENAI_URL):
+            return openai_response(body)
+        if str(request.url).startswith(providers.GEMINI_URL):
+            return gemini_response(request)
         if body.get("stream"):
             return httpx.Response(200, content=chunked(sse(body["model"], stop)), headers={"content-type": "text/event-stream"})
         return httpx.Response(
@@ -85,6 +92,36 @@ def sse(model: str, stop_reason: str = "end_turn") -> bytes:
         ("message_stop", {}),
     ]
     return b"".join(f"event: {name}\ndata: {json.dumps(data)}\n\n".encode() for name, data in events)
+
+
+def openai_response(body: dict) -> httpx.Response:
+    usage = {"prompt_tokens": 100, "completion_tokens": 50, "prompt_tokens_details": {"cached_tokens": 40}}
+    text = f"answer from {body['model']}"
+    if not body["stream"]:
+        message = {"choices": [{"message": {"content": text}, "finish_reason": "stop"}], "usage": usage}
+        return httpx.Response(200, json=message)
+    chunks = [
+        {"choices": [{"delta": {"content": text}, "finish_reason": None}]},
+        {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+        {"choices": [], "usage": usage},  # usage comes last, after the finish reason
+    ]
+    data = b"".join(f"data: {json.dumps(chunk)}\n\n".encode() for chunk in chunks) + b"data: [DONE]\n\n"
+    return httpx.Response(200, content=chunked(data), headers={"content-type": "text/event-stream"})
+
+
+def gemini_response(request: httpx.Request) -> httpx.Response:
+    model = request.url.path.rsplit("/", 1)[1].split(":")[0]
+    chunks = [
+        {"candidates": [{"content": {"parts": [{"text": "thinking...", "thought": True}, {"text": f"answer from {model}"}]}}]},
+        {
+            "candidates": [{"content": {"parts": [{"text": ""}]}, "finishReason": "STOP"}],
+            "usageMetadata": {"promptTokenCount": 100, "candidatesTokenCount": 30, "thoughtsTokenCount": 20},
+        },
+    ]
+    if request.url.params.get("alt") != "sse":
+        return httpx.Response(200, json={**chunks[1], "candidates": [{**chunks[1]["candidates"][0], **chunks[0]["candidates"][0]}]})
+    data = b"".join(f"data: {json.dumps(chunk)}\r\n\r\n".encode() for chunk in chunks)  # Gemini ends lines with \r\n
+    return httpx.Response(200, content=chunked(data), headers={"content-type": "text/event-stream"})
 
 
 async def chunked(data: bytes, size: int = 7):
@@ -424,14 +461,114 @@ def test_a_chat_sees_only_its_own_session_costs(net):
     rows = call("GET", "/usage/chat-1", headers={"x-api-key": "good-key"}).json()
     assert len(rows) == 1
     assert (rows[0]["tier"], rows[0]["route"]) == ("haiku", "routed")
+    assert (rows[0]["answered_by"], rows[0]["level"], rows[0]["asked_for"]) == ("Haiku 5.5", 0, "Opus 5.5")
     assert rows[0]["baseline_usd"] > rows[0]["cost_usd"] > 0
     assert call("GET", "/usage/chat-1", headers={"x-api-key": "nope"}).status_code == 401
+
+
+def test_every_ceiling_is_the_model_on_its_rung():
+    for model, level in CEILINGS.items():
+        assert TIERS[provider_of(model)][level].model == model
+
+
+def test_gpt_routes_within_openai_and_answers_in_claude_format(net):
+    response = ask(model="gpt-6-astra", system="Be brief.")
+    assert str(net.claude_calls[-1].url) == providers.OPENAI_URL
+    assert net.claude_calls[-1].headers["authorization"] == "Bearer sk-openai"
+    assert net.sent()["model"] == "gpt-6-luna"
+    assert net.sent()["messages"] == [
+        {"role": "system", "content": "Be brief."},
+        {"role": "user", "content": "reword this email"},
+    ]
+    message = response.json()
+    assert (message["model"], message["stop_reason"]) == ("gpt-6-astra", "end_turn")
+    assert message["content"] == [{"type": "text", "text": "answer from gpt-6-luna"}]
+
+    logged = last_logged()
+    assert (logged["tier"], logged["model"]) == ("gpt-luna", "gpt-6-luna")
+    assert logged["cost_usd"] == pytest.approx((60 * 0.10 + 40 * 0.01 + 50 * 0.50) / 1e6)  # 40 of 100 cached
+    assert logged["baseline_usd"] == pytest.approx((60 * 10 + 40 * 1.00 + 50 * 50) / 1e6)
+
+
+def test_gemini_stream_becomes_claude_events_without_the_thinking(net):
+    response = ask(model="gemini-4-carbon", stream=True)
+    request = net.claude_calls[-1]
+    assert request.url.path.endswith("/gemini-3.1-flash-lite:streamGenerateContent")
+    assert (request.url.params["alt"], request.headers["x-goog-api-key"]) == ("sse", "gemini-key")
+    assert net.sent()["contents"] == [{"role": "user", "parts": [{"text": "reword this email"}]}]
+
+    events = [event for event in response.content.split(b"\n\n") if event]
+    assert [event.split(b"\n")[0].removeprefix(b"event: ").decode() for event in events] == [
+        "message_start", "content_block_start", "content_block_delta", "content_block_stop", "message_delta", "message_stop",
+    ]
+    assert b'"model": "gemini-4-carbon"' in events[0]
+    assert b"answer from gemini-3.1-flash-lite" in events[2]
+    assert b"thinking" not in response.content
+
+    logged = last_logged()
+    assert (logged["tier"], logged["stop_reason"]) == ("gemini-flash-lite", "end_turn")
+    assert (logged["input_tokens"], logged["output_tokens"]) == (100, 50)  # thinking is billed as output
+
+
+def test_gemini_gets_its_own_roles_and_returns_a_claude_message(net):
+    turns = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": [{"type": "text", "text": "hello"}]},
+        {"role": "user", "content": "more"},
+    ]
+    response = ask(model="gemini-4-carbon", messages=turns)
+    assert [turn["role"] for turn in net.sent()["contents"]] == ["user", "model", "user"]
+    assert net.sent()["contents"][1]["parts"] == [{"text": "hello"}]
+    assert response.json()["content"] == [{"type": "text", "text": "answer from gemini-3.1-flash-lite"}]
+    assert response.json()["usage"]["output_tokens"] == 50
+
+
+def test_other_providers_refuse_what_they_cannot_take(net, monkeypatch):
+    image = [{"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "x"}}]
+    assert ask(model="gpt-6-astra", messages=[{"role": "user", "content": image}]).status_code == 400
+    assert ask(model="gpt-6-astra", tools=[{"name": "t", "input_schema": {"type": "object"}}]).status_code == 400
+    monkeypatch.setitem(providers.KEYS, "gemini", "")
+    response = ask(model="gemini-4-carbon")
+    assert response.status_code == 400 and "GEMINI_API_KEY" in response.json()["error"]["message"]
+    assert net.claude_calls == []
+
+
+def test_provider_errors_come_back_in_claude_shape(net):
+    net.claude_status = [429]
+    response = ask(model="gpt-6-astra")
+    assert response.status_code == 429
+    assert response.json() == {"type": "error", "error": {"type": "rate_limit_error", "message": "nope"}}
+
+
+def test_a_cheaper_gpt_rejection_resends_on_the_requested_model(net):
+    net.claude_status = [400, 200]
+    ask(model="gpt-6-astra")
+    assert [json.loads(call.content)["model"] for call in net.claude_calls] == ["gpt-6-luna", "gpt-6-astra"]
+    assert last_logged()["route"] == "retried"
+
+
+def test_models_lists_the_routable_models_of_providers_with_keys(net, monkeypatch):
+    def ids():
+        return [model["id"] for model in call("GET", "/v1/models", headers={"x-api-key": "good-key"}).json()["data"]]
+
+    assert ids() == list(CEILINGS)
+    monkeypatch.setitem(providers.KEYS, "openai", "")
+    assert "gpt-6-astra" not in ids() and "claude-opus-5-5" in ids()
+    assert call("GET", "/v1/models", headers={"x-api-key": "nope"}).status_code == 401
+
+
+def test_gpt_answers_are_checked_against_the_requested_gpt(net, checked):
+    ask(model="gpt-6-astra", stream=True)
+    assert (net.sent()["model"], net.sent()["stream"]) == ("gpt-6-astra", True)
+    check = store.db.execute("SELECT tier, requested_model, verdict FROM checks").fetchone()
+    assert tuple(check) == ("gpt-luna", "gpt-6-astra", "same")
 
 
 def test_tiers_line_up_with_jev_levels():
     from gateway.policy import QUESTIONS
 
-    assert len(QUESTIONS["complexity"]["criteria"]) == len(TIERS)
+    assert len(QUESTIONS["complexity"]["criteria"]) == LEVELS
+    assert all(len(tiers) == LEVELS for tiers in TIERS.values())
 
 
 def test_a_bad_stream_event_does_not_break_the_relay():
@@ -460,7 +597,7 @@ def test_default_rung_is_the_policys_default():
 
 
 def test_top_rung_keeps_cheaper_than_opus_traffic_to_measure():
-    assert LADDER[TOP_RUNG][1] < len(TIERS) - 1
+    assert LADDER[TOP_RUNG][1] < LEVELS - 1
 
 
 def test_a_clear_quality_problem_tightens_quickly():
@@ -772,6 +909,7 @@ def test_admin_quality_reports_the_estimate_trend_and_moves(net, checked, monkey
 def test_drift_demo_detects_and_corrects(tmp_path):
     result = subprocess.run(
         [sys.executable, "simulate_drift.py", "--requests", "5000", "--rate", "0.5"],
+        cwd=Path(__file__).parent.parent,
         env={**os.environ, "DB_PATH": str(tmp_path / "sim.db")},
         capture_output=True,
         text=True,

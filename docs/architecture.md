@@ -1,6 +1,6 @@
 # Build plan
 
-How the proposal in `README.md` maps onto this repo.
+How the [proposal](proposal.md) maps onto this repo. To run it, see the [README](../README.md).
 
 ## Backend language: Python
 
@@ -22,27 +22,38 @@ Python, because the gateway spends almost all its time waiting on the network. M
 ```
 backend/
   gateway/
-    main.py       HTTP: /v1/messages, count_tokens, streaming relay, /admin
+    main.py       HTTP: /v1/messages, /v1/models, count_tokens, /usage, /admin, the streaming relay
+    providers.py  OpenAI and Gemini behind the Claude Messages API, text only
     router.py     conversation tracking, re-ask detection, Jev client
-    policy.py     Jev questions, tiers, answers to tier (pure, the eval imports this)
+    policy.py     each provider's tiers, Jev questions, answers to tier (pure, the eval imports this)
     pricing.py    prices and cost from a usage block (the eval imports this too)
     store.py      SQLite: conversation state, request log, quality checks
-    sse.py        reads the event stream for the relay and for checks
+    sse.py        reads Claude's event stream for the relay and for checks
     shadow.py     samples answers, re-asks the requested model, feeds the tuner
     judge.py      blind comparison of two answers (the eval can grade with this)
     tuning.py     the sequential test and the strictness ladder (pure)
-  test_gateway.py
+  tests/
   simulate_drift.py   drift demo and sample rate table, through the real gateway code
-frontend/         admin view: React, Vite
-eval/             empty for now
+frontend/         chat and per-chat savings: React, Vite
 ```
 
 The eval can run `pip install -e backend`, then `from gateway.policy import choose_tier`.
 
+## Providers
+
+Every provider has four tiers, one per Jev complexity level, and a request is only ever routed within the provider of the model it asked for. A GPT request is never answered by Claude, so "as good as the model you picked" stays a comparison within one family.
+
+OpenAI and Gemini sit behind `providers.py`. It translates a Claude Messages request into Chat Completions or `generateContent`, and translates the answer, streamed or not, back into Claude's message and event format. Everything downstream, from the relay to cost logging to quality checks, sees Claude-shaped data and doesn't branch on provider.
+
+- **Text only.** Tools, images and files are refused for GPT and Gemini with a 400, rather than silently dropped. Claude requests with them pass through unrouted, as before.
+- **Thinking is billed, not shown.** Gemini thought parts are dropped from the answer, and their tokens count as output, as Google bills them.
+- **No effort settings.** Claude's two Haiku tiers differ by effort. The GPT and Gemini tiers are four distinct models, so no provider-specific reasoning parameters are sent.
+- **The judge stays on Claude.** Quality checks re-ask the requested GPT or Gemini model through the same translation, and the Claude judge compares the two answers.
+
 ## Request flow
 
 1. Check the gateway key, which identifies the team.
-2. Pass through untouched if the model isn't Opus 5.5 or Sonnet 5.5, or the request has images or files.
+2. Pass through untouched if the model isn't a routable ceiling (`CEILINGS` in `policy.py`), or the request has images or files. GPT and Gemini requests that aren't plain text are refused.
 3. Identify the conversation from the team, the Claude Code session and the first message.
 4. **Known conversation:** reuse its tier, so no Jev call. If the same prompt was already answered, move up one tier and log it.
 5. **New conversation:** ask Jev three questions and apply the policy at the current strictness for that task and team. If Jev fails, times out, or the prompt is too long, keep the requested model.
@@ -123,41 +134,8 @@ The gateway checks a sample of cheaper answers against the requested model, and 
 - [ ] Run against the live Claude API and Jev. Everything so far used fakes, so no real keys have been exercised.
 - [ ] Measure the judge's noise before trusting automatic tightening. In the eval, answer each request with Opus twice and have the judge compare the two. If that rate is near 2%, raise `TARGET` and `ALARM_RATE` in `tuning.py` to sit above it.
 - [ ] Replace the assumed cost of a check in the sample rate table with measured shadow and judge costs.
+- [ ] Run GPT and Gemini against their live APIs. The translation in `providers.py` is tested against fakes built from their documented formats.
 - [ ] Add a row to the proposal's risk table: the gateway sends prompt text to Jev, a third party hosted on DigitalOcean. That goes beyond "log only metadata".
 - [ ] Confirm Jev's price on DigitalOcean. Its docs list `typesafe-jev-1.13.0`, while the proposal's $0.042 comes from an article about TypeSafe's own 1.14 pricing.
 - [ ] Test the Haiku tiers with real traffic. Requests that use tools Haiku rejects fall back through the 400 path, which pins that conversation to the requested model and gives up its savings.
 - [ ] Decide how admins and gateway keys are managed beyond the `.env` file.
-
-## Run it
-
-```sh
-# Backend, terminal 1
-cd backend
-python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest
-cp .env.example .env    # then fill it in
-.venv/bin/uvicorn gateway.main:app --env-file .env
-
-# Frontend, terminal 2, at http://localhost:5173
-cd frontend
-npm install
-npm run dev
-
-# Point Claude Code at the gateway, using a key from GATEWAY_KEYS
-export ANTHROPIC_BASE_URL=http://localhost:8000
-export ANTHROPIC_AUTH_TOKEN=<gateway key>
-```
-
-To see the drift demo in the admin view with no API keys, run this in `backend`, start the frontend, then sign in with the token `change-me`:
-
-```sh
-DB_PATH=sim.db .venv/bin/python simulate_drift.py
-DB_PATH=sim.db SHADOW_DAILY_BUDGET_USD=100 .venv/bin/uvicorn gateway.main:app --env-file .env.example
-```
-
-To print the sample rate table:
-
-```sh
-DB_PATH=:memory: .venv/bin/python simulate_drift.py --sweep
-```

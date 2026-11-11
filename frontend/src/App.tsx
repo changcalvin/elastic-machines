@@ -13,28 +13,17 @@ type RequestRow = {
   cost_usd: number | null;
   baseline_usd: number | null;
   router_usd: number | null;
+  // Display names come from the gateway, so adding a provider never touches this page.
+  answered_by: string;
+  asked_for: string;
+  level: number | null; // 0 is the cheapest rung, 3 the most capable
 };
+type Model = { id: string; display_name: string };
 type Page = "chat" | "analytics";
 
-// What every message asks for. The gateway may answer with a cheaper model.
-const MODEL = "claude-opus-5-5";
 const MAX_TOKENS = 8192;
 const REFRESH_MS = 2_000;
 const OFFLINE = "Can't reach the gateway. Start the backend and try again.";
-
-const TIERS: Record<string, string> = {
-  haiku: "Haiku 5.5",
-  "haiku-high": "Haiku 5.5, high effort",
-  sonnet: "Sonnet 5.5",
-  opus: "Opus 5.5",
-};
-
-const MODELS: Record<string, string> = {
-  "claude-fable-5-1": "Fable 5.1",
-  "claude-opus-5-5": "Opus 5.5",
-  "claude-sonnet-5-5": "Sonnet 5.5",
-  "claude-haiku-5-5": "Haiku 5.5",
-};
 
 const ROUTES: Record<string, string> = {
   routed: "Router's choice",
@@ -104,11 +93,17 @@ function Chat({
   messages,
   busy,
   error,
+  models,
+  model,
+  onModel,
   onSend,
 }: {
   messages: Message[];
   busy: boolean;
   error: string;
+  models: Model[];
+  model: string;
+  onModel: (model: string) => void;
   onSend: (text: string) => Promise<boolean>;
 }) {
   const [draft, setDraft] = useState("");
@@ -130,7 +125,7 @@ function Chat({
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     const text = draft.trim();
-    if (!text || busy) return;
+    if (!text || busy || !model) return;
     pinned.current = true;
     setDraft("");
     if (!(await onSend(text))) setDraft(text);
@@ -168,14 +163,22 @@ function Chat({
         <form onSubmit={submit}>
           <textarea
             aria-label="Message"
-            placeholder={`Message ${MODELS[MODEL]}`}
+            placeholder={`Message ${models.find((m) => m.id === model)?.display_name ?? "the gateway"}`}
             rows={1}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={keyDown}
             autoFocus
           />
-          <button type="submit" className="send" disabled={busy || !draft.trim()}>
+          {/* The routing ceiling: the gateway answers with this model or a cheaper one from the same provider. */}
+          <select aria-label="Model" value={model} onChange={(e) => onModel(e.target.value)}>
+            {models.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.display_name}
+              </option>
+            ))}
+          </select>
+          <button type="submit" className="send" disabled={busy || !model || !draft.trim()}>
             Send
           </button>
         </form>
@@ -212,26 +215,24 @@ function PerMessage({ rows }: { rows: RequestRow[] }) {
           <thead>
             <tr>
               <th scope="col" className="num">#</th>
+              <th scope="col">Asked for</th>
               <th scope="col">Answered by</th>
               <th scope="col">Why</th>
               <th scope="col" className="num">Tokens in / out</th>
               <th scope="col" className="num">Cost</th>
-              <th scope="col" className="num">At {MODELS[MODEL]}</th>
+              <th scope="col" className="num">If sent as asked</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row, index) => (
               <tr key={row.id}>
                 <td className="num">{index + 1}</td>
+                <td>{row.asked_for}</td>
                 <td>
-                  {row.tier ? (
-                    <span className="answered">
-                      <span className={`swatch tier-${row.tier}`} />
-                      {TIERS[row.tier] ?? row.tier}
-                    </span>
-                  ) : (
-                    MODELS[row.model] ?? row.model
-                  )}
+                  <span className="answered">
+                    {row.level !== null && <span className={`swatch level-${row.level}`} />}
+                    {row.answered_by}
+                  </span>
                 </td>
                 <td>{row.status === 200 ? ROUTES[row.route] ?? row.route : `Failed, status ${row.status}`}</td>
                 <td className="num">
@@ -297,7 +298,7 @@ function Analytics({ session }: { session: string }) {
       {notice}
       <section aria-label="This chat's spend">
         <h1>
-          This chat cost {usd(spent)}. Sending every message to {MODELS[MODEL]} would have cost {usd(baseline)}.
+          This chat cost {usd(spent)}. Sending every message to the model you picked would have cost {usd(baseline)}.
         </h1>
         <SpendBar spent={spent} baseline={baseline} />
         <p className="quiet">
@@ -315,7 +316,19 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [busy, setBusy] = useState(false);
   const [chatError, setChatError] = useState("");
+  const [models, setModels] = useState<Model[]>([]);
+  const [model, setModel] = useState("");
   const streaming = useRef<AbortController | null>(null);
+
+  // Lists only providers with a key set on the gateway; the first is the default.
+  useEffect(() => {
+    getJson<{ data: Model[] }>("/v1/models")
+      .then(({ data }) => {
+        setModels(data);
+        setModel((current) => current || data[0].id);
+      })
+      .catch((error) => setChatError(describe(error)));
+  }, []);
 
   const newChat = () => {
     streaming.current?.abort();
@@ -343,7 +356,7 @@ export default function App() {
           // The gateway keys the conversation on this, and logs it so Analytics can find this chat.
           "x-claude-code-session-id": session,
         },
-        body: JSON.stringify({ model: MODEL, max_tokens: MAX_TOKENS, stream: true, messages: history }),
+        body: JSON.stringify({ model, max_tokens: MAX_TOKENS, stream: true, messages: history }),
       });
       if (!response.ok) throw new Error(await failure(response));
       let answer = "";
@@ -385,7 +398,15 @@ export default function App() {
       </header>
       <main className={page}>
         {page === "chat" ? (
-          <Chat messages={messages} busy={busy} error={chatError} onSend={send} />
+          <Chat
+            messages={messages}
+            busy={busy}
+            error={chatError}
+            models={models}
+            model={model}
+            onModel={setModel}
+            onSend={send}
+          />
         ) : (
           <Analytics session={session} />
         )}

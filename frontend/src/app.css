@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  /* Neutral base with one blue accent. Corners are 4px; only tier swatches, too small for that, are 2px. */
+  /* Neutral base with one blue accent. Corners are 4px; only level swatches, too small for that, are 2px. */
   --paper: #f8f9fa;
   --ink: #16191d;
   --muted: #59616c;
@@ -8,10 +8,11 @@
   --spent: #16191d;
   --hatch: #5598e7;
   /* Ordinal ramp, checked with the dataviz validator against --paper. */
-  --tier-haiku: #86b6ef;
-  --tier-haiku-high: #5598e7;
-  --tier-sonnet: #256abf;
-  --tier-opus: #104281;
+  --level-0: #86b6ef;
+  --level-1: #5598e7;
+  --level-2: #256abf;
+  --level-3: #104281;
+  --accent: var(--level-2);
   /* Built-in easings are too soft to feel intentional. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
@@ -26,10 +27,10 @@
     --rule: #2d3239;
     --spent: #eceef1;
     --hatch: #3987e5;
-    --tier-haiku: #1c5cab;
-    --tier-haiku-high: #3987e5;
-    --tier-sonnet: #86b6ef;
-    --tier-opus: #cde2fb;
+    --level-0: #1c5cab;
+    --level-1: #3987e5;
+    --level-2: #86b6ef;
+    --level-3: #cde2fb;
   }
 }
 
@@ -47,7 +48,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--tier-sonnet);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -259,7 +260,7 @@ h2 {
 }
 
 .turn.assistant a {
-  color: var(--tier-sonnet);
+  color: var(--accent);
   text-underline-offset: 2px;
 }
 
@@ -338,6 +339,26 @@ h2 {
   field-sizing: content;
 }
 
+/* The model picker sits quietly in the composer, like the send button's label. */
+.composer select {
+  max-width: 12rem;
+  padding: 0.45rem 0.4rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .composer select:hover {
+    color: var(--ink);
+  }
+}
+
 .send {
   padding: 0.45rem 0.95rem;
   border: 0;
@@ -401,7 +422,7 @@ h2 {
 .notice {
   margin: 0 0 1rem;
   padding: 0.6rem 0.8rem;
-  border-left: 3px solid var(--tier-sonnet);
+  border-left: 3px solid var(--accent);
   background: color-mix(in srgb, var(--hatch) 18%, var(--paper));
   transition:
     opacity 200ms var(--ease-out),
@@ -465,20 +486,20 @@ thead th {
   border-radius: 2px;
 }
 
-.tier-haiku {
-  background: var(--tier-haiku);
+.level-0 {
+  background: var(--level-0);
 }
 
-.tier-haiku-high {
-  background: var(--tier-haiku-high);
+.level-1 {
+  background: var(--level-1);
 }
 
-.tier-sonnet {
-  background: var(--tier-sonnet);
+.level-2 {
+  background: var(--level-2);
 }
 
-.tier-opus {
-  background: var(--tier-opus);
+.level-3 {
+  background: var(--level-3);
 }
 
 button {
