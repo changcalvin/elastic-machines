@@ -1,4 +1,6 @@
 # Project Proposal: Elastic Machines
+> team elastic machines
+
 ## One-line summary
 
 Elastic Machines is a gateway that sends each LLM request to the cheapest model that can answer it as well as the model the user picked. It shows the user how much that saved.
