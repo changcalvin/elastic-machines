@@ -1,6 +1,6 @@
 # Build plan
 
-How the [proposal](proposal.md) maps onto this repo. To run it, see the [README](../README.md).
+How the [proposal](../proposal.md) maps onto this repo. To run it, see the [README](../README.md).
 
 ## Backend language: Python
 

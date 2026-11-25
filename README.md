@@ -108,14 +108,14 @@ backend/
   gateway/     the gateway: routing, providers, pricing, quality checks
   tests/
 frontend/      the chat and analytics pages
-docs/          architecture, proposal and course notes
+docs/          architecture and course notes
 ```
 
 ## Status
 
 Everything works end to end against fake providers, and all tests pass. It hasn't been run against the live APIs yet, and the eval that measures real savings and quality hasn't started, so there are no measured results yet. Prices in `backend/gateway/pricing.py` are list prices from November 2026; Gemini 4's price doubles on December 1, 2026.
 
-[docs/architecture.md](docs/architecture.md) covers the design, the quality checks and the open items. [docs/proposal.md](docs/proposal.md) has the original proposal and evaluation plan.
+[docs/architecture.md](docs/architecture.md) covers the design, the quality checks and the open items. [proposal.md](proposal.md) has the proposal and evaluation plan.
 
 ## License
 
